@@ -80,6 +80,7 @@ Nsim                = 1         # number of simulations to run
 
 # set the random number generator seed
 np.random.seed(127) 
+random.seed(127)
 
 # prep figure
 num_bins = 200
