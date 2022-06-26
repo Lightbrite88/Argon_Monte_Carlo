@@ -318,8 +318,8 @@ for sim in range(Nsim):
                                     x_velocities_in_cell[i] = new_vx2
                                     y_velocities_in_cell[i] = new_vy2
                                     z_velocities_in_cell[i] = new_vz2
-                                    continue_path[i] = abs(np.sqrt(new_x2**2 + new_y2**2 + new_z2**2)*t)
-                                    continue_path[j] = abs(np.sqrt(new_x1**2 + new_y1**2 + new_z1**2)*t)
+                                    continue_path[i] = abs(np.sqrt(new_vx2**2 + new_vy2**2 + new_vz2**2)*t)
+                                    continue_path[j] = abs(np.sqrt(new_vx1**2 + new_vy1**2 + new_vz1**2)*t)
                                     continue_x_path[i] = abs(new_vx2*t)
                                     continue_z_path[i] = abs(new_vz2*t)
                                     continue_y_path[i] = abs(new_vy2*t)
