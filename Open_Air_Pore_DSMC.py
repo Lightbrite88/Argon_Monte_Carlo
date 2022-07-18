@@ -45,7 +45,7 @@ total_height        = pore_height + open_air_height*2 # metres
 #cell size
 num_x_subdivions    = 7
 num_y_subdivions    = 7
-num_z_subdivions    = 150             
+num_z_subdivions    = 148
 dx                  = open_air_radius/num_x_subdivions # cell x
 dy                  = open_air_radius/num_y_subdivions # cell y
 dz                  = total_height/num_z_subdivions # cell z - total_height/num_z_subdivions + overlap = ~ 2 particle diameters high
@@ -108,14 +108,6 @@ def random_components(r):
     Fy = r*sin(phi)*sin(theta) * np.random.choice([-1,1])
     Fz = r*cos(theta)
     return Fx,Fy,Fz
-
-# #Intended curve for fitting (exponential decay)
-# def fit_exp_function(independant_variable, coeff_1, coeff_2):
-#     return coeff_1 * np.exp(coeff_2 * np.array(independant_variable))
-
-# #Intended curve for fitting (inverse)
-# def fit_inv_function(independant_variable, coeff_1, coeff_2, coeff_3):
-#     return coeff_1 * (independant_variable-coeff_2)**coeff_3
 
 def init_positions():
     def x_func(radius, rand_rad, theta):
@@ -268,34 +260,156 @@ def pairwise_particles_in_cell(completed_paths, completed_x_paths, completed_y_p
     return in_cell, continue_path, continue_x_path, continue_y_path, continue_z_path, has_collided, x_positions_in_cell, \
         y_positions_in_cell, z_positions_in_cell, x_velocities_in_cell, y_velocities_in_cell, z_velocities_in_cell
 
+def hit_vertical_wall(hits, z_plane, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths):
+    global z_vals, x_velocities, y_velocities, z_velocities, full_path_traveled
+    global dist_since_collision, dist_x_since_collision, dist_y_since_collision, dist_z_since_collision
+    global num_collisions_per_step
+    dt_ac = (z_vals[hits]-z_plane) / z_velocities[hits] # time after collision
+    x_velocities_in_case = x_velocities[hits]
+    y_velocities_in_case = y_velocities[hits]
+    z_velocities_in_case = z_velocities[hits]
+    continue_path = dist_since_collision[hits]
+    continue_x_path = dist_x_since_collision[hits]
+    continue_y_path = dist_y_since_collision[hits]
+    continue_z_path = dist_z_since_collision[hits]
+    has_collided = full_path_traveled[hits]
+    num_particles_in_case = np.sum( hits )
+    for p in range(num_particles_in_case):
+        t = dt_ac[p]
+        vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
+        if has_collided[p]: # a full path has been observed
+            completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
+            completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
+            completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
+            completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
+        else: #this was the end of a partial path
+            has_collided[p] = True
+        continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
+        continue_x_path[p] = abs(vx*t)
+        continue_y_path[p] = abs(vy*t)
+        continue_z_path[p] = abs(vz*t)
+    dist_since_collision[hits] = continue_path
+    dist_x_since_collision[hits] = continue_x_path
+    dist_y_since_collision[hits] = continue_y_path
+    dist_z_since_collision[hits] = continue_z_path
+    full_path_traveled[hits] = has_collided
+    z_velocities[hits] = -z_velocities[hits]  # reverse normal component of velocity
+    z_vals[hits] = z_plane + dt_ac * z_velocities[hits]
+    num_collisions_per_step.value += hits.sum()
+
+def hit_cylinder_side_wall(hits, collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths):    
+    global x_vals, y_vals, x_velocities, y_velocities, z_velocities, full_path_traveled
+    global dist_since_collision, dist_x_since_collision, dist_y_since_collision, dist_z_since_collision
+    global num_collisions_per_step
+    x_positions_in_case = x_vals[hits]
+    y_positions_in_case = y_vals[hits]
+    x_velocities_in_case = x_velocities[hits]
+    y_velocities_in_case = y_velocities[hits]
+    z_velocities_in_case = z_velocities[hits]
+    continue_path = dist_since_collision[hits]
+    continue_x_path = dist_x_since_collision[hits]
+    continue_y_path = dist_y_since_collision[hits]
+    continue_z_path = dist_z_since_collision[hits]
+    has_collided = full_path_traveled[hits]
+    num_particles_in_case = np.sum( hits )
+    for p in range(num_particles_in_case):
+        try:
+            x, y, vx, vy, vz = x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
+            a = (-vx)**2 + (-vy)**2
+            b = 2 * (x * (-vx) + y * (-vy))
+            c = x**2 + y**2 - collision_radius**2
+            t = np.min([(-b + np.sqrt(b**2 - 4*a*c))/(2*a), (-b - np.sqrt(b**2 - 4*a*c))/(2*a)])
+            col_x, col_y = x-vx*t, y-vy*t
+            normal_vect = np.array([col_x, col_y])
+            normalized_norm_vect = normal_vect/collision_radius
+            vel_vect = np.array([vx, vy])
+            scalar = np.dot(vel_vect, normalized_norm_vect)
+            reflected_vel_vect = vel_vect - 2 * scalar * normalized_norm_vect
+            new_vx, new_vy = reflected_vel_vect[0], reflected_vel_vect[1]
+            new_x, new_y = col_x + new_vx*t, col_y + new_vy*t
+            if has_collided[p]: # a full path has been observed
+                completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
+                completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
+                completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
+                completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
+            else: #this was the end of a partial path
+                has_collided[p] = True
+            x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p] = new_x, new_y, new_vx, new_vy
+            continue_path[p] = abs(np.sqrt(new_vx**2 + new_vy**2 + vz**2)*t)
+            continue_x_path[p] = abs(new_vx*t)
+            continue_y_path[p] = abs(new_vy*t)
+            continue_z_path[p] = abs(vz*t)
+        except:
+            print([a, b, c])
+            total_errs += 1
+    x_vals[hits] = x_positions_in_case
+    y_vals[hits] = y_positions_in_case
+    x_velocities[hits] = x_velocities_in_case
+    y_velocities[hits] = y_velocities_in_case
+    dist_since_collision[hits] = continue_path
+    dist_x_since_collision[hits] = continue_x_path
+    dist_y_since_collision[hits] = continue_y_path
+    dist_z_since_collision[hits] = continue_z_path
+    full_path_traveled[hits] = has_collided
+    num_collisions_per_step.value += num_particles_in_case
+
 def init_globals(counter):
     global num_collisions_per_step
     num_collisions_per_step = counter
 
-#free path tracking
-dist_since_collision = np.zeros(num_molecules)
-dist_x_since_collision = np.zeros(num_molecules)
-dist_y_since_collision = np.zeros(num_molecules)
-dist_z_since_collision = np.zeros(num_molecules)
-full_path_traveled = np.zeros(num_molecules, dtype=bool)
+def num_out_of_bounds():
+    global x_vals, y_vals, z_vals
+    num_particles_out_of_bounds = 0
+    found = z_vals < 0
+    z_vals[found] += 10*argon_radius
+    num_particles_out_of_bounds += found.sum()
+    found = z_vals > total_height
+    z_vals[found] -= 10*argon_radius
+    num_particles_out_of_bounds += found.sum()
+    found = x_vals**2 + y_vals**2 > open_air_radius**2
+    x_vals[found] = 0
+    y_vals[found] = 0
+    num_particles_out_of_bounds += found.sum()
+    found = np.logical_and(x_vals**2 + y_vals**2 > gap_radius**2, np.logical_and(z_vals > open_air_height, z_vals < (total_height - open_air_height)))
+    x_vals[found] = 0
+    y_vals[found] = 0
+    num_particles_out_of_bounds += found.sum()
+    found = np.logical_and(x_vals**2 + y_vals**2 > pore_coated_radius**2, np.logical_or(np.logical_and(z_vals > open_air_height, z_vals < (open_air_height+hot_coating_height)), np.logical_and(z_vals > (open_air_height+hot_coating_height+gap_height), z_vals < (total_height - open_air_height))))
+    x_vals[found] = 0
+    y_vals[found] = 0
+    num_particles_out_of_bounds += found.sum()
+    return num_particles_out_of_bounds
 
-# Initialize positions
-x_vals,y_vals,z_vals = init_positions()
-prior_x_vals = np.zeros(num_molecules)
-prior_y_vals = np.zeros(num_molecules)
-prior_z_vals = np.zeros(num_molecules)
-
-x_velocities, y_velocities, z_velocities = init_velocities()            
+            
 total_cols = 0
 total_errs = 0
 
-# Grab Currrent Time After Running the initalization
-end_init = time()
-init_time = end_init - start
-print( 'Initialization Runtime: '+ str(init_time) + ' seconds')
 
 # Simulation Main Loop
 if __name__ == "__main__":
+
+    global dist_since_collision, dist_x_since_collision, dist_y_since_collision, dist_z_since_collision, full_path_traveled, x_vals, y_vals, z_vals, prior_x_vals, prior_y_vals, prior_z_vals, x_velocities, y_velocities, z_velocities
+
+    #free path tracking
+    dist_since_collision = np.zeros(num_molecules)
+    dist_x_since_collision = np.zeros(num_molecules)
+    dist_y_since_collision = np.zeros(num_molecules)
+    dist_z_since_collision = np.zeros(num_molecules)
+    full_path_traveled = np.zeros(num_molecules, dtype=bool)
+
+    # Initialize positions
+    x_vals,y_vals,z_vals = init_positions()
+    prior_x_vals = np.zeros(num_molecules)
+    prior_y_vals = np.zeros(num_molecules)
+    prior_z_vals = np.zeros(num_molecules)
+
+    x_velocities, y_velocities, z_velocities = init_velocities()
+
+    # Grab Currrent Time After Running the initalization
+    end_init = time()
+    init_time = end_init - start
+    print( 'Initialization Runtime: '+ str(init_time) + ' seconds')
+    print('  There are {} particles out of bounds after initialization.'.format(num_out_of_bounds()))    
 
     with Manager() as manager:
         #MP safe lists for making the particle vs particle comparisons parallel
@@ -305,7 +419,7 @@ if __name__ == "__main__":
         completed_z_paths = manager.list()
 
         # Evolve
-        for i in range(num_timesteps):
+        for i in range(100):
 
             # timestamp of the start of a timestep
             step_start = time()
@@ -315,7 +429,7 @@ if __name__ == "__main__":
             #reset num_collisions_per_step to MP safe value of zero for new timestep
             num_collisions_per_step = Value('i', 0)
             
-            # drift
+            # DRIFT
             prior_x_vals = np.copy(x_vals)
             prior_y_vals = np.copy(y_vals)
             prior_z_vals = np.copy(z_vals)
@@ -328,393 +442,65 @@ if __name__ == "__main__":
             dist_y_since_collision += abs(dt*y_velocities)
             dist_z_since_collision += abs(dt*z_velocities)
 
+            # WALL COLLISIONS
             # CASE 1 
             # collide specular side of open air cylinder
             hit_side_open_air = np.sqrt(x_vals**2 + y_vals**2) > open_air_radius #true/false array
-            x_positions_in_case = x_vals[hit_side_open_air]
-            y_positions_in_case = y_vals[hit_side_open_air]
-            x_velocities_in_case = x_velocities[hit_side_open_air]
-            y_velocities_in_case = y_velocities[hit_side_open_air]
-            z_velocities_in_case = z_velocities[hit_side_open_air]
-            continue_path = dist_since_collision[hit_side_open_air]
-            continue_x_path = dist_x_since_collision[hit_side_open_air]
-            continue_y_path = dist_y_since_collision[hit_side_open_air]
-            continue_z_path = dist_z_since_collision[hit_side_open_air]
-            has_collided = full_path_traveled[hit_side_open_air]
-            num_particles_in_case = np.sum( hit_side_open_air )
-            for p in range(num_particles_in_case):
-                try:
-                    x, y, vx, vy, vz = x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                    a = (-vx)**2 + (-vy)**2
-                    b = 2 * (x * (-vx) + y * (-vy))
-                    c = x**2 + y**2 - open_air_collision_radius**2
-                    t = np.min([(-b + np.sqrt(b**2 - 4*a*c))/(2*a), (-b - np.sqrt(b**2 - 4*a*c))/(2*a)])
-                    col_x, col_y = x-vx*t, y-vy*t
-                    normal_vect = np.array([col_x, col_y])
-                    normalized_norm_vect = normal_vect/open_air_collision_radius
-                    vel_vect = np.array([vx, vy])
-                    scalar = np.dot(vel_vect, normalized_norm_vect)
-                    reflected_vel_vect = vel_vect - 2 * scalar * normalized_norm_vect
-                    new_vx, new_vy = reflected_vel_vect[0], reflected_vel_vect[1]
-                    new_x, new_y = col_x + new_vx*t, col_y + new_vy*t
-                    if has_collided[p]: # a full path has been observed
-                        completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                        completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                        completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                        completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                    else: #this was the end of a partial path
-                        has_collided[p] = True
-                    x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p] = new_x, new_y, new_vx, new_vy
-                    continue_path[p] = abs(np.sqrt(new_vx**2 + new_vy**2 + vz**2)*t)
-                    continue_x_path[p] = abs(new_vx*t)
-                    continue_y_path[p] = abs(new_vy*t)
-                    continue_z_path[p] = abs(vz*t)
-                except:
-                    print([a, b, c])
-                    total_errs += 1
-            x_vals[hit_side_open_air] = x_positions_in_case
-            y_vals[hit_side_open_air] = y_positions_in_case
-            x_velocities[hit_side_open_air] = x_velocities_in_case
-            y_velocities[hit_side_open_air] = y_velocities_in_case
-            dist_since_collision[hit_side_open_air] = continue_path
-            dist_x_since_collision[hit_side_open_air] = continue_x_path
-            dist_y_since_collision[hit_side_open_air] = continue_y_path
-            dist_z_since_collision[hit_side_open_air] = continue_z_path
-            full_path_traveled[hit_side_open_air] = has_collided
-            num_collisions_per_step.value += num_particles_in_case            
+            # print(hit_side_open_air.sum())
+            hit_cylinder_side_wall(hit_side_open_air, open_air_collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)            
 
             # CASE 2
             # collide specular exterier vertical limits of described open air shape
             #top side
             hit_vertical_ext_open_air_min = z_vals < 0
-            dt_ac = z_vals[hit_vertical_ext_open_air_min] / z_velocities[hit_vertical_ext_open_air_min] # time after collision
-            x_velocities_in_case = x_velocities[hit_vertical_ext_open_air_min]
-            y_velocities_in_case = y_velocities[hit_vertical_ext_open_air_min]
-            z_velocities_in_case = z_velocities[hit_vertical_ext_open_air_min]
-            continue_path = dist_since_collision[hit_vertical_ext_open_air_min]
-            continue_x_path = dist_x_since_collision[hit_vertical_ext_open_air_min]
-            continue_y_path = dist_y_since_collision[hit_vertical_ext_open_air_min]
-            continue_z_path = dist_z_since_collision[hit_vertical_ext_open_air_min]
-            has_collided = full_path_traveled[hit_vertical_ext_open_air_min]
-            num_particles_in_case = np.sum( hit_vertical_ext_open_air_min )
-            for p in range(num_particles_in_case):
-                t = dt_ac[p]
-                vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                if has_collided[p]: # a full path has been observed
-                    completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                    completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                    completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                    completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                else: #this was the end of a partial path
-                    has_collided[p] = True
-                continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
-                continue_x_path[p] = abs(vx*t)
-                continue_y_path[p] = abs(vy*t)
-                continue_z_path[p] = abs(vz*t)
-            dist_since_collision[hit_vertical_ext_open_air_min] = continue_path
-            dist_x_since_collision[hit_vertical_ext_open_air_min] = continue_x_path
-            dist_y_since_collision[hit_vertical_ext_open_air_min] = continue_y_path
-            dist_z_since_collision[hit_vertical_ext_open_air_min] = continue_z_path
-            full_path_traveled[hit_vertical_ext_open_air_min] = has_collided
-            z_velocities[hit_vertical_ext_open_air_min] = -z_velocities[hit_vertical_ext_open_air_min]  # reverse normal component of velocity
-            z_vals[hit_vertical_ext_open_air_min] = dt_ac * z_velocities[hit_vertical_ext_open_air_min]
-            num_collisions_per_step.value += hit_vertical_ext_open_air_min.sum()
-
+            # print(hit_vertical_ext_open_air_min.sum())
+            hit_vertical_wall(hit_vertical_ext_open_air_min, 0, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
             #bottom side
             hit_vertical_ext_open_air_max = z_vals > total_height
-            dt_ac = (z_vals[hit_vertical_ext_open_air_max]-total_height) / z_velocities[hit_vertical_ext_open_air_max] # time after collision
-            x_velocities_in_case = x_velocities[hit_vertical_ext_open_air_max]
-            y_velocities_in_case = y_velocities[hit_vertical_ext_open_air_max]
-            z_velocities_in_case = z_velocities[hit_vertical_ext_open_air_max]
-            continue_path = dist_since_collision[hit_vertical_ext_open_air_max]
-            continue_x_path = dist_x_since_collision[hit_vertical_ext_open_air_max]
-            continue_y_path = dist_y_since_collision[hit_vertical_ext_open_air_max]
-            continue_z_path = dist_z_since_collision[hit_vertical_ext_open_air_max]
-            has_collided = full_path_traveled[hit_vertical_ext_open_air_max]
-            num_particles_in_case = np.sum( hit_vertical_ext_open_air_max )
-            for p in range(num_particles_in_case):
-                t = dt_ac[p]
-                vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                if has_collided[p]: # a full path has been observed
-                    completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                    completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                    completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                    completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                else: #this was the end of a partial path
-                    has_collided[p] = True
-                continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
-                continue_x_path[p] = abs(vx*t)
-                continue_y_path[p] = abs(vy*t)
-                continue_z_path[p] = abs(vz*t)
-            dist_since_collision[hit_vertical_ext_open_air_max] = continue_path
-            dist_x_since_collision[hit_vertical_ext_open_air_max] = continue_x_path
-            dist_y_since_collision[hit_vertical_ext_open_air_max] = continue_y_path
-            dist_z_since_collision[hit_vertical_ext_open_air_max] = continue_z_path
-            full_path_traveled[hit_vertical_ext_open_air_max] = has_collided
-            z_velocities[hit_vertical_ext_open_air_max] = -z_velocities[hit_vertical_ext_open_air_max]  # reverse normal component of velocity
-            z_vals[hit_vertical_ext_open_air_max] = total_height + dt_ac * z_velocities[hit_vertical_ext_open_air_max]
-            num_collisions_per_step.value += hit_vertical_ext_open_air_max.sum()      
+            # print(hit_vertical_ext_open_air_max.sum())
+            hit_vertical_wall(hit_vertical_ext_open_air_max, total_height, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)      
 
             # CASE 3
             # collide specular interior vertical limits of described open air shape
+            #cold
             hit_vertical_int_open_air_cold = np.logical_and(prior_z_vals > total_height - open_air_height, np.logical_and(z_vals < total_height - open_air_height, np.sqrt(x_vals**2 + y_vals**2) > pore_coated_radius)) #cold side
-            dt_ac = (z_vals[hit_vertical_int_open_air_cold]-(total_height - open_air_height)) / z_velocities[hit_vertical_int_open_air_cold] # time after collision
-            x_velocities_in_case = x_velocities[hit_vertical_int_open_air_cold]
-            y_velocities_in_case = y_velocities[hit_vertical_int_open_air_cold]
-            z_velocities_in_case = z_velocities[hit_vertical_int_open_air_cold]
-            continue_path = dist_since_collision[hit_vertical_int_open_air_cold]
-            continue_x_path = dist_x_since_collision[hit_vertical_int_open_air_cold]
-            continue_y_path = dist_y_since_collision[hit_vertical_int_open_air_cold]
-            continue_z_path = dist_z_since_collision[hit_vertical_int_open_air_cold]
-            has_collided = full_path_traveled[hit_vertical_int_open_air_cold]
-            num_particles_in_case = np.sum( hit_vertical_int_open_air_cold )
-            for p in range(num_particles_in_case):
-                t = dt_ac[p]
-                vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                if has_collided[p]: # a full path has been observed
-                    completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                    completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                    completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                    completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                else: #this was the end of a partial path
-                    has_collided[p] = True
-                continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
-                continue_x_path[p] = abs(vx*t)
-                continue_y_path[p] = abs(vy*t)
-                continue_z_path[p] = abs(vz*t)
-            dist_since_collision[hit_vertical_int_open_air_cold] = continue_path
-            dist_x_since_collision[hit_vertical_int_open_air_cold] = continue_x_path
-            dist_y_since_collision[hit_vertical_int_open_air_cold] = continue_y_path
-            dist_z_since_collision[hit_vertical_int_open_air_cold] = continue_z_path
-            full_path_traveled[hit_vertical_int_open_air_cold] = has_collided
-            z_velocities[hit_vertical_int_open_air_cold] = -z_velocities[hit_vertical_int_open_air_cold]  # reverse normal component of velocity
-            z_vals[hit_vertical_int_open_air_cold] = total_height - open_air_height + dt_ac * z_velocities[hit_vertical_int_open_air_cold]
-            num_collisions_per_step.value += hit_vertical_int_open_air_cold.sum()
-            
+            # print(hit_vertical_int_open_air_cold.sum())
+            hit_vertical_wall(hit_vertical_int_open_air_cold, (total_height - open_air_height), completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
+            #hot
             hit_vertical_int_open_air_hot = np.logical_and(prior_z_vals < open_air_height, np.logical_and(z_vals > open_air_height, np.sqrt(x_vals**2 + y_vals**2) > pore_coated_radius)) #hot side
-            dt_ac = (z_vals[hit_vertical_int_open_air_hot]-open_air_height) / z_velocities[hit_vertical_int_open_air_hot] # time after collision
-            x_velocities_in_case = x_velocities[hit_vertical_int_open_air_hot]
-            y_velocities_in_case = y_velocities[hit_vertical_int_open_air_hot]
-            z_velocities_in_case = z_velocities[hit_vertical_int_open_air_hot]
-            continue_path = dist_since_collision[hit_vertical_int_open_air_hot]
-            continue_x_path = dist_x_since_collision[hit_vertical_int_open_air_hot]
-            continue_y_path = dist_y_since_collision[hit_vertical_int_open_air_hot]
-            continue_z_path = dist_z_since_collision[hit_vertical_int_open_air_hot]
-            has_collided = full_path_traveled[hit_vertical_int_open_air_hot]
-            num_particles_in_case = np.sum( hit_vertical_int_open_air_hot )
-            for p in range(num_particles_in_case):
-                t = dt_ac[p]
-                vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                if has_collided[p]: # a full path has been observed
-                    completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                    completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                    completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                    completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                else: #this was the end of a partial path
-                    has_collided[p] = True
-                continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
-                continue_x_path[p] = abs(vx*t)
-                continue_y_path[p] = abs(vy*t)
-                continue_z_path[p] = abs(vz*t)
-            dist_since_collision[hit_vertical_int_open_air_hot] = continue_path
-            dist_x_since_collision[hit_vertical_int_open_air_hot] = continue_x_path
-            dist_y_since_collision[hit_vertical_int_open_air_hot] = continue_y_path
-            dist_z_since_collision[hit_vertical_int_open_air_hot] = continue_z_path
-            full_path_traveled[hit_vertical_int_open_air_hot] = has_collided
-            z_velocities[hit_vertical_int_open_air_hot] = -z_velocities[hit_vertical_int_open_air_hot]  # reverse normal component of velocity
-            z_vals[hit_vertical_int_open_air_hot] = open_air_height + dt_ac * z_velocities[hit_vertical_int_open_air_hot]
-            num_collisions_per_step.value += hit_vertical_int_open_air_hot.sum()
-
-            # #EDGE CASE: TODO: partical starts in open air, ends out of bounds (normally case 3), but went in to the pore and should have collided with the coating (normally case 4)
-            # #currently not prioritized as corners may be slightly rounded realistically anyways
+            # print(hit_vertical_int_open_air_hot.sum())
+            hit_vertical_wall(hit_vertical_int_open_air_hot, open_air_height, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
 
             # CASE 4
-            # collide with gap interior wall
+            # collide with gap interior side wall
             hit_gap_cylinder_wall = np.logical_and( np.logical_and(prior_z_vals < total_height-open_air_height-cold_coating_height, prior_z_vals > open_air_height + hot_coating_height), 
                                                     np.logical_and(np.sqrt(prior_x_vals**2 + prior_y_vals**2) < gap_radius, np.sqrt(x_vals**2 + y_vals**2) > gap_radius))
-            x_positions_in_case = x_vals[hit_gap_cylinder_wall]
-            y_positions_in_case = y_vals[hit_gap_cylinder_wall]
-            x_velocities_in_case = x_velocities[hit_gap_cylinder_wall]
-            y_velocities_in_case = y_velocities[hit_gap_cylinder_wall]
-            z_velocities_in_case = z_velocities[hit_gap_cylinder_wall]
-            continue_path = dist_since_collision[hit_gap_cylinder_wall]
-            continue_x_path = dist_x_since_collision[hit_gap_cylinder_wall]
-            continue_y_path = dist_y_since_collision[hit_gap_cylinder_wall]
-            continue_z_path = dist_z_since_collision[hit_gap_cylinder_wall]
-            has_collided = full_path_traveled[hit_gap_cylinder_wall]
-            num_particles_in_case = np.sum( hit_gap_cylinder_wall )
-            for p in range(num_particles_in_case):
-                try:
-                    x, y, vx, vy = x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p]
-                    a = (-vx)**2 + (-vy)**2
-                    b = 2 * (x * (-vx) + y * (-vy))
-                    c = x**2 + y**2 - gap_collision_radius**2
-                    t = np.min([(-b + np.sqrt(b**2 - 4*a*c))/(2*a), (-b - np.sqrt(b**2 - 4*a*c))/(2*a)])
-                    col_x, col_y = x-vx*t, y-vy*t
-                    normal_vect = np.array([col_x, col_y])
-                    normalized_norm_vect = normal_vect/gap_collision_radius
-                    vel_vect = np.array([vx, vy])
-                    scalar = np.dot(vel_vect, normalized_norm_vect)
-                    reflected_vel_vect = vel_vect - 2 * scalar * normalized_norm_vect
-                    new_vx, new_vy = reflected_vel_vect[0], reflected_vel_vect[1]
-                    new_x, new_y = col_x + new_vx*t, col_y + new_vy*t
-                    if has_collided[p]: # a full path has been observed
-                        completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                        completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                        completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                        completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                    else: #this was the end of a partial path
-                        has_collided[p] = True
-                    x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p] = new_x, new_y, new_vx, new_vy
-                    continue_path[p] = abs(np.sqrt(new_vx**2 + new_vy**2 + vz**2)*t)
-                    continue_x_path[p] = abs(new_vx*t)
-                    continue_y_path[p] = abs(new_vy*t)
-                    continue_z_path[p] = abs(vz*t)
-                except:
-                    print([a, b, c])
-                    total_errs += 1
-            x_vals[hit_gap_cylinder_wall] = x_positions_in_case
-            y_vals[hit_gap_cylinder_wall] = y_positions_in_case
-            x_velocities[hit_gap_cylinder_wall] = x_velocities_in_case
-            y_velocities[hit_gap_cylinder_wall] = y_velocities_in_case
-            dist_since_collision[hit_gap_cylinder_wall] = continue_path
-            dist_x_since_collision[hit_gap_cylinder_wall] = continue_x_path
-            dist_y_since_collision[hit_gap_cylinder_wall] = continue_y_path
-            dist_z_since_collision[hit_gap_cylinder_wall] = continue_z_path
-            full_path_traveled[hit_gap_cylinder_wall] = has_collided
-            num_collisions_per_step.value += num_particles_in_case
+            # print(hit_gap_cylinder_wall.sum())
+            hit_cylinder_side_wall(hit_gap_cylinder_wall, gap_collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
 
             # CASE 5
             # collide with top or bottom bases of gap cylinder
+            #bottom
             hit_gap_cylinder_base_bottom = np.logical_and( np.logical_and( np.sqrt(prior_x_vals**2 + prior_y_vals**2) > pore_coated_radius, z_vals < open_air_height + hot_coating_height),
                                                     np.logical_and( prior_z_vals < total_height-open_air_height-cold_coating_height, prior_z_vals > open_air_height + hot_coating_height))
-            dt_ac = ((z_vals[hit_gap_cylinder_base_bottom])-(open_air_height + hot_coating_height)) / z_velocities[hit_gap_cylinder_base_bottom] # time after collision
-            x_velocities_in_case = x_velocities[hit_gap_cylinder_base_bottom]
-            y_velocities_in_case = y_velocities[hit_gap_cylinder_base_bottom]
-            z_velocities_in_case = z_velocities[hit_gap_cylinder_base_bottom]
-            continue_path = dist_since_collision[hit_gap_cylinder_base_bottom]
-            continue_x_path = dist_x_since_collision[hit_gap_cylinder_base_bottom]
-            continue_y_path = dist_y_since_collision[hit_gap_cylinder_base_bottom]
-            continue_z_path = dist_z_since_collision[hit_gap_cylinder_base_bottom]
-            has_collided = full_path_traveled[hit_gap_cylinder_base_bottom]
-            num_particles_in_case = np.sum( hit_gap_cylinder_base_bottom )
-            for p in range(num_particles_in_case):
-                t = dt_ac[p]
-                vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                if has_collided[p]: # a full path has been observed
-                    completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                    completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                    completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                    completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                else: #this was the end of a partial path
-                    has_collided[p] = True
-                continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
-                continue_x_path[p] = abs(vx*t)
-                continue_y_path[p] = abs(vy*t)
-                continue_z_path[p] = abs(vz*t)
-            dist_since_collision[hit_gap_cylinder_base_bottom] = continue_path
-            dist_x_since_collision[hit_gap_cylinder_base_bottom] = continue_x_path
-            dist_y_since_collision[hit_gap_cylinder_base_bottom] = continue_y_path
-            dist_z_since_collision[hit_gap_cylinder_base_bottom] = continue_z_path
-            full_path_traveled[hit_gap_cylinder_base_bottom] = has_collided
-            z_velocities[hit_gap_cylinder_base_bottom] = -z_velocities[hit_gap_cylinder_base_bottom]  # reverse normal component of velocity
-            z_vals[hit_gap_cylinder_base_bottom] = open_air_height + hot_coating_height + dt_ac * z_velocities[hit_gap_cylinder_base_bottom]
-            num_collisions_per_step.value += hit_gap_cylinder_base_bottom.sum()
-
+            # print(hit_gap_cylinder_base_bottom.sum())
+            hit_vertical_wall(hit_gap_cylinder_base_bottom, (open_air_height + hot_coating_height), completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
+            #top
             hit_gap_cylinder_base_top = np.logical_and( np.logical_and( np.sqrt(prior_x_vals**2 + prior_y_vals**2) > pore_coated_radius, z_vals > total_height-open_air_height-cold_coating_height),
                                                     np.logical_and( prior_z_vals < total_height-open_air_height-cold_coating_height, prior_z_vals > open_air_height + hot_coating_height))
-            dt_ac = (z_vals[hit_gap_cylinder_base_top]-(total_height - open_air_height - cold_coating_height)) / z_velocities[hit_gap_cylinder_base_top] # time after collision
-            x_velocities_in_case = x_velocities[hit_gap_cylinder_base_top]
-            y_velocities_in_case = y_velocities[hit_gap_cylinder_base_top]
-            z_velocities_in_case = z_velocities[hit_gap_cylinder_base_top]
-            continue_path = dist_since_collision[hit_gap_cylinder_base_top]
-            continue_x_path = dist_x_since_collision[hit_gap_cylinder_base_top]
-            continue_y_path = dist_y_since_collision[hit_gap_cylinder_base_top]
-            continue_z_path = dist_z_since_collision[hit_gap_cylinder_base_top]
-            has_collided = full_path_traveled[hit_gap_cylinder_base_top]
-            num_particles_in_case = np.sum( hit_gap_cylinder_base_top )
-            for p in range(num_particles_in_case):
-                t = dt_ac[p]
-                vx, vy, vz = x_velocities_in_case[p], y_velocities_in_case[p], z_velocities_in_case[p]
-                if has_collided[p]: # a full path has been observed
-                    completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                    completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                    completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                    completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                else: #this was the end of a partial path
-                    has_collided[p] = True
-                continue_path[p] = abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)
-                continue_x_path[p] = abs(vx*t)
-                continue_y_path[p] = abs(vy*t)
-                continue_z_path[p] = abs(vz*t)
-            dist_since_collision[hit_gap_cylinder_base_top] = continue_path
-            dist_x_since_collision[hit_gap_cylinder_base_top] = continue_x_path
-            dist_y_since_collision[hit_gap_cylinder_base_top] = continue_y_path
-            dist_z_since_collision[hit_gap_cylinder_base_top] = continue_z_path
-            full_path_traveled[hit_gap_cylinder_base_top] = has_collided
-            z_velocities[hit_gap_cylinder_base_top] = -z_velocities[hit_gap_cylinder_base_top]  # reverse normal component of velocity
-            z_vals[hit_gap_cylinder_base_top] = total_height - open_air_height - cold_coating_height + dt_ac * z_velocities[hit_gap_cylinder_base_top]
-            num_collisions_per_step.value += hit_gap_cylinder_base_top.sum()                                                
+            # print(hit_gap_cylinder_base_top.sum())
+            hit_vertical_wall(hit_gap_cylinder_base_top, (total_height - open_air_height - cold_coating_height), completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)                                                
 
             # CASE 6
-            # collide with coated pore wall
+            # collide with coated pore side wall
             hit_pore_coating = np.logical_and(  np.logical_and( np.sqrt(prior_x_vals**2 + prior_y_vals**2) < pore_coated_radius, np.sqrt(x_vals**2 + y_vals**2) > pore_coated_radius), #always necessary for a collision with the coating wall
                                                 np.logical_or(  np.logical_and(z_vals < total_height-open_air_height, z_vals > total_height-open_air_height-cold_coating_height), #cold coating reflection - treated as specular in this simulation
                                                                 np.logical_and(z_vals < open_air_height + hot_coating_height, z_vals > open_air_height))) #hot coating reflection - treated as specular in this simulation
-            x_positions_in_case = x_vals[hit_pore_coating]
-            y_positions_in_case = y_vals[hit_pore_coating]
-            x_velocities_in_case = x_velocities[hit_pore_coating]
-            y_velocities_in_case = y_velocities[hit_pore_coating]
-            z_velocities_in_case = z_velocities[hit_pore_coating]
-            continue_path = dist_since_collision[hit_pore_coating]
-            continue_x_path = dist_x_since_collision[hit_pore_coating]
-            continue_y_path = dist_y_since_collision[hit_pore_coating]
-            continue_z_path = dist_z_since_collision[hit_pore_coating]
-            has_collided = full_path_traveled[hit_pore_coating]
-            num_particles_in_case = np.sum( hit_pore_coating )
-            for p in range(num_particles_in_case):
-                try:
-                    x, y, vx, vy = x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p]
-                    a = (-vx)**2 + (-vy)**2
-                    b = 2 * (x * (-vx) + y * (-vy))
-                    c = x**2 + y**2 - pore_collision_radius**2
-                    t = np.min([(-b + np.sqrt(b**2 - 4*a*c))/(2*a), (-b - np.sqrt(b**2 - 4*a*c))/(2*a)])
-                    col_x, col_y = x-vx*t, y-vy*t
-                    normal_vect = np.array([col_x, col_y])
-                    normalized_norm_vect = normal_vect/pore_collision_radius
-                    vel_vect = np.array([vx, vy])
-                    scalar = np.dot(vel_vect, normalized_norm_vect)
-                    reflected_vel_vect = vel_vect - 2 * scalar * normalized_norm_vect
-                    new_vx, new_vy = reflected_vel_vect[0], reflected_vel_vect[1]
-                    new_x, new_y = col_x + new_vx*t, col_y + new_vy*t
-                    if has_collided[p]: # a full path has been observed
-                        completed_paths.append(abs(continue_path[p] - abs(np.sqrt(vx**2 + vy**2 + vz**2)*t)))
-                        completed_x_paths.append(abs(continue_x_path[p] - abs(vx*t)))
-                        completed_y_paths.append(abs(continue_y_path[p] - abs(vy*t)))
-                        completed_z_paths.append(abs(continue_z_path[p] - abs(vz*t)))
-                    else: #this was the end of a partial path
-                        has_collided[p] = True
-                    x_positions_in_case[p], y_positions_in_case[p], x_velocities_in_case[p], y_velocities_in_case[p] = new_x, new_y, new_vx, new_vy
-                    continue_path[p] = abs(np.sqrt(new_vx**2 + new_vy**2 + vz**2)*t)
-                    continue_x_path[p] = abs(new_vx*t)
-                    continue_y_path[p] = abs(new_vy*t)
-                    continue_z_path[p] = abs(vz*t)
-                except:
-                    print([a, b, c])
-                    total_errs += 1
-            x_vals[hit_pore_coating] = x_positions_in_case
-            y_vals[hit_pore_coating] = y_positions_in_case
-            x_velocities[hit_pore_coating] = x_velocities_in_case
-            y_velocities[hit_pore_coating] = y_velocities_in_case
-            dist_since_collision[hit_pore_coating] = continue_path
-            dist_x_since_collision[hit_pore_coating] = continue_x_path
-            dist_y_since_collision[hit_pore_coating] = continue_y_path
-            dist_z_since_collision[hit_pore_coating] = continue_z_path
-            full_path_traveled[hit_pore_coating] = has_collided
-            num_collisions_per_step.value += num_particles_in_case
+            # print(hit_pore_coating.sum())
+            hit_cylinder_side_wall(hit_pore_coating, pore_collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
 
             #Checks for piece of mind that particles are not lost over time
-            if (i%200 == 0):
+            if (i%5 == 0):
                 hit = np.sqrt(x_vals**2 + y_vals**2) > open_air_radius #true/false array
                 print('             ',hit.sum(),' missed case 1\'s')
                 hit = z_vals < 0
@@ -738,13 +524,14 @@ if __name__ == "__main__":
                                                 np.logical_or(  np.logical_and(z_vals < total_height-open_air_height, z_vals > total_height-open_air_height-cold_coating_height), #cold coating reflection - treated as specular in this simulation
                                                                 np.logical_and(z_vals < open_air_height + hot_coating_height, z_vals > open_air_height))) #hot coating reflection - treated as specular in this simulation
                 print('             ',hit.sum(),' missed case 6\'s')
-
+            print('    There are {} particles out of bounds after handling wall collisions.'.format(num_out_of_bounds()))
             # Grab Currrent Time After Running the initalization
             end_step_walls = time()
             wall_time = end_step_walls - step_start
-            print( 'Wall Step Runtime: '+ str(wall_time) + ' seconds')
+            print( '    Wall Step Runtime: '+ str(wall_time) + ' seconds')
+            print( '    Num collisions from walls: ' + str(num_collisions_per_step.value))
 
-            # Particle-Particle Collisions
+            # PARTICLE-PARTICLE COLLISIONS
             # For each independant group of cells
             for x_group in range(2):
                 for y_group in range(2):
@@ -774,14 +561,14 @@ if __name__ == "__main__":
                             dist_since_collision[in_cell], dist_x_since_collision[in_cell], dist_y_since_collision[in_cell], dist_z_since_collision[in_cell], full_path_traveled[in_cell], x_vals[in_cell], y_vals[in_cell], z_vals[in_cell], x_velocities[in_cell], y_velocities[in_cell], z_velocities[in_cell] = continue_path, continue_x_path, continue_y_path, continue_z_paths, has_collided, x_positions_in_cell, y_positions_in_cell, z_positions_in_cell, x_velocities_in_cell, y_velocities_in_cell, z_velocities_in_cell
                         pool.close()
                         pool.join()
-
+            print('    There are {} particles out of bounds after particle-particle collisions.'.format(num_out_of_bounds()))
             # Grab Currrent Time After Running the initalization
             end_step_pvp = time()
             pvp_time = end_step_pvp - end_step_walls
-            print( 'PVP step Runtime: '+ str(pvp_time) + ' seconds')
+            print( '    Particle-Particle step Runtime: '+ str(pvp_time) + ' seconds')
             # Update total collisions and print the completed timestep's collisions
             total_cols += num_collisions_per_step.value
-            print('    ',num_collisions_per_step.value,' collisions')
+            print('   ',num_collisions_per_step.value,' collisions from this timestep')
 
         # Note relevant end of sim values
         print(' ',total_errs,' errors/warnings - potential lost particles')        
