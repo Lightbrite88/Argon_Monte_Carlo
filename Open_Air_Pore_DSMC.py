@@ -16,8 +16,7 @@ Create Your Own Direct Simulation Monte Carlo (With Python)
 Author: Jeff Hatton (Science methodology by Sean Wagner)
 Based on structure by Philip Mocz (2021) Princeton Univeristy, @PMocz
 Simulate dilute gas with DSMC with 1:1 particle collisions
-Setup: Open air cube of Argon
-dimensionless units of m = sigma = k T0 = 1
+Setup: Open air pore with Argon
 """
 
 """ Direct Simulation Monte Carlo """
@@ -76,8 +75,7 @@ pore_collision_radius = pore_coated_radius - argon_radius
 #Time
 tau                 = lambda_mfp / v_mean   # mean-free time
 Nmft                = 20                    # number of mean-free times to run simulation
-#Change this value
-NMFT_slice          = 1000                    #num timesteps per mean-free time (25 -> ~28 atom lengths per timestep) use 1000 max
+NMFT_slice          = 1000                  # num timesteps per mean-free time (25 -> ~28 atom lengths per timestep) use 1000 max (3/4 of an atom length per timestep)
 num_timesteps       = Nmft*NMFT_slice       # number of time steps 
 dt                  = Nmft*tau/num_timesteps# timestep
 
@@ -87,8 +85,8 @@ cold_pore_particles = np.floor(num_molecules * (cold_volume/total_volume)).astyp
 hot_pore_particles  = np.floor(num_molecules * (hot_volume/total_volume)).astype(int)
 gap_particles       = np.floor(num_molecules * (gap_volume/total_volume)).astype(int)
 remaining_particles = num_molecules - gap_particles - hot_pore_particles - cold_pore_particles - open_air_particles*2
-N                   = num_molecules     # number of sampling particles
-Nsim                = 1         # number of simulations to run
+N                   = num_molecules         # number of sampling particles
+Nsim                = 1                     # number of simulations to run
 num_workers         = cpu_count() + 1
 
 # set the random number generator seed
@@ -446,36 +444,30 @@ if __name__ == "__main__":
             # CASE 1 
             # collide specular side of open air cylinder
             hit_side_open_air = np.sqrt(x_vals**2 + y_vals**2) > open_air_radius #true/false array
-            # print(hit_side_open_air.sum())
             hit_cylinder_side_wall(hit_side_open_air, open_air_collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)            
 
             # CASE 2
             # collide specular exterier vertical limits of described open air shape
             #top side
             hit_vertical_ext_open_air_min = z_vals < 0
-            # print(hit_vertical_ext_open_air_min.sum())
             hit_vertical_wall(hit_vertical_ext_open_air_min, 0, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
             #bottom side
             hit_vertical_ext_open_air_max = z_vals > total_height
-            # print(hit_vertical_ext_open_air_max.sum())
             hit_vertical_wall(hit_vertical_ext_open_air_max, total_height, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)      
 
             # CASE 3
             # collide specular interior vertical limits of described open air shape
             #cold
             hit_vertical_int_open_air_cold = np.logical_and(prior_z_vals > total_height - open_air_height, np.logical_and(z_vals < total_height - open_air_height, np.sqrt(x_vals**2 + y_vals**2) > pore_coated_radius)) #cold side
-            # print(hit_vertical_int_open_air_cold.sum())
             hit_vertical_wall(hit_vertical_int_open_air_cold, (total_height - open_air_height), completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
             #hot
             hit_vertical_int_open_air_hot = np.logical_and(prior_z_vals < open_air_height, np.logical_and(z_vals > open_air_height, np.sqrt(x_vals**2 + y_vals**2) > pore_coated_radius)) #hot side
-            # print(hit_vertical_int_open_air_hot.sum())
             hit_vertical_wall(hit_vertical_int_open_air_hot, open_air_height, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
 
             # CASE 4
             # collide with gap interior side wall
             hit_gap_cylinder_wall = np.logical_and( np.logical_and(prior_z_vals < total_height-open_air_height-cold_coating_height, prior_z_vals > open_air_height + hot_coating_height), 
                                                     np.logical_and(np.sqrt(prior_x_vals**2 + prior_y_vals**2) < gap_radius, np.sqrt(x_vals**2 + y_vals**2) > gap_radius))
-            # print(hit_gap_cylinder_wall.sum())
             hit_cylinder_side_wall(hit_gap_cylinder_wall, gap_collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
 
             # CASE 5
@@ -483,12 +475,10 @@ if __name__ == "__main__":
             #bottom
             hit_gap_cylinder_base_bottom = np.logical_and( np.logical_and( np.sqrt(prior_x_vals**2 + prior_y_vals**2) > pore_coated_radius, z_vals < open_air_height + hot_coating_height),
                                                     np.logical_and( prior_z_vals < total_height-open_air_height-cold_coating_height, prior_z_vals > open_air_height + hot_coating_height))
-            # print(hit_gap_cylinder_base_bottom.sum())
             hit_vertical_wall(hit_gap_cylinder_base_bottom, (open_air_height + hot_coating_height), completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
             #top
             hit_gap_cylinder_base_top = np.logical_and( np.logical_and( np.sqrt(prior_x_vals**2 + prior_y_vals**2) > pore_coated_radius, z_vals > total_height-open_air_height-cold_coating_height),
                                                     np.logical_and( prior_z_vals < total_height-open_air_height-cold_coating_height, prior_z_vals > open_air_height + hot_coating_height))
-            # print(hit_gap_cylinder_base_top.sum())
             hit_vertical_wall(hit_gap_cylinder_base_top, (total_height - open_air_height - cold_coating_height), completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)                                                
 
             # CASE 6
@@ -496,11 +486,10 @@ if __name__ == "__main__":
             hit_pore_coating = np.logical_and(  np.logical_and( np.sqrt(prior_x_vals**2 + prior_y_vals**2) < pore_coated_radius, np.sqrt(x_vals**2 + y_vals**2) > pore_coated_radius), #always necessary for a collision with the coating wall
                                                 np.logical_or(  np.logical_and(z_vals < total_height-open_air_height, z_vals > total_height-open_air_height-cold_coating_height), #cold coating reflection - treated as specular in this simulation
                                                                 np.logical_and(z_vals < open_air_height + hot_coating_height, z_vals > open_air_height))) #hot coating reflection - treated as specular in this simulation
-            # print(hit_pore_coating.sum())
             hit_cylinder_side_wall(hit_pore_coating, pore_collision_radius, completed_paths, completed_x_paths, completed_y_paths, completed_z_paths)
 
             #Checks for piece of mind that particles are not lost over time
-            if (i%5 == 0):
+            if (i%100 == 0):
                 hit = np.sqrt(x_vals**2 + y_vals**2) > open_air_radius #true/false array
                 print('             ',hit.sum(),' missed case 1\'s')
                 hit = z_vals < 0
@@ -525,6 +514,7 @@ if __name__ == "__main__":
                                                                 np.logical_and(z_vals < open_air_height + hot_coating_height, z_vals > open_air_height))) #hot coating reflection - treated as specular in this simulation
                 print('             ',hit.sum(),' missed case 6\'s')
             print('    There are {} particles out of bounds after handling wall collisions.'.format(num_out_of_bounds()))
+            
             # Grab Currrent Time After Running the initalization
             end_step_walls = time()
             wall_time = end_step_walls - step_start
@@ -615,9 +605,9 @@ if __name__ == "__main__":
         # Grab Currrent Time After Running the Code
         end = time()
         runtime = end - start
-        print( 'Runtime: '+ str(runtime/60.0) + ' minutes (pre histogram data rewrite')
+        print( 'Runtime: '+ str(runtime/60.0) + ' minutes (pre histogram data rewrite)')
 
-        #save histogram data to text file
+        #save histogram data to text files
         file_x = open("hist_x_axis_total_data.txt", "w")
         file_x.write(str(bins_total[0:len(n_total)]))
         file_x.close()
