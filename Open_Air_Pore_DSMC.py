@@ -417,7 +417,7 @@ if __name__ == "__main__":
         completed_z_paths = manager.list()
 
         # Evolve
-        for i in range(100):
+        for i in range(num_timesteps):
 
             # timestamp of the start of a timestep
             step_start = time()
