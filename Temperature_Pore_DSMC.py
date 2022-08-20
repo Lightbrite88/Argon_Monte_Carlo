@@ -105,7 +105,7 @@ cold_pore_particles         = np.floor(num_molecules * (cold_volume/total_volume
 hot_pore_particles          = np.floor(num_molecules * (hot_volume/total_volume)).astype(int)
 gap_particles               = np.floor(num_molecules * (gap_volume/total_volume)).astype(int)
 remaining_particles         = num_molecules - gap_particles - hot_pore_particles - cold_pore_particles - open_air_particles*2
-num_sims                        = 1                     # number of simulations to run
+num_sims                    = 1                     # number of simulations to run
 num_workers                 = cpu_count() + 1
 
 # set the random number generator seed
@@ -660,7 +660,7 @@ if __name__ == "__main__":
         completed_z_paths = manager.list()
 
         # Evolve
-        for step in range(250):
+        for step in range(num_timesteps):
 
             # timestamp of the start of a timestep
             step_start = time()
