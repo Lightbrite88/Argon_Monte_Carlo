@@ -10,16 +10,12 @@ from functools import partial
 from scipy.stats import maxwell
 np.seterr(all='raise')
 np.set_printoptions(threshold=maxsize)
-#comment to show on commit
-"""
-Create Your Own Direct Simulation Monte Carlo (With Python)
-Author: Jeff Hatton (Science methodology by Sean Wagner)
-Based on structure by Philip Mocz (2021) Princeton Univeristy, @PMocz
-Simulate dilute gas with DSMC with 1:1 particle collisions
-Setup: Open air pore with Argon
-"""
 
-""" Direct Simulation Monte Carlo """
+"""
+1:1 Time based Hard Sphere Argon Particle Collision Monte Carlo
+Author: Jeff Hatton (Science methodology by Sean Wagner)
+Initially inspired by a DSMC by Philip Mocz (2021) Princeton Univeristy, @PMocz
+"""
 
 # Grab Currrent Time Before Running the Code
 start               = time()

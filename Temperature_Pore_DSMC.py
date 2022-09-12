@@ -17,14 +17,10 @@ np.set_printoptions(threshold=maxsize)
 
 
 """
-Create Your Own Direct Simulation Monte Carlo (With Python)
+1:1 Time based Hard Sphere Argon Particle Collision Monte Carlo
 Author: Jeff Hatton (Science methodology by Sean Wagner)
-Based on structure by Philip Mocz (2021) Princeton Univeristy, @PMocz
-Simulate dilute gas with DSMC with 1:1 particle collisions
-Setup: Open air pore with Argon
+Initially inspired by a DSMC by Philip Mocz (2021) Princeton Univeristy, @PMocz
 """
-
-""" Direct Simulation Monte Carlo """
 
 # Grab Currrent Time Before Running the Code
 start                       = time()
@@ -557,10 +553,12 @@ def hit_cylinder_gap_side_wall(hits, collision_radius, completed_paths, complete
     return momentem_z_change_in_case, total_errs
 
 def init_globals(counter):
+    #for a parallel safe counter
     global num_collisions_per_step
     num_collisions_per_step = counter
     
 def num_out_of_bounds():
+    #determine how many particles have escaped the confines of the defined volume 
     global x_vals, y_vals, z_vals
     num_particles_out_of_bounds = 0
     found = z_vals < 0
@@ -594,6 +592,7 @@ def num_out_of_bounds():
     return num_particles_out_of_bounds
 
 def recapture_out_of_bounds():
+    #translate escaped particles back to the interior of the defined volume and return how many were translated
     global x_vals, y_vals, z_vals
     num_particles_out_of_bounds = 0
     found = z_vals < 0
