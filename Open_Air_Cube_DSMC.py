@@ -13,15 +13,10 @@ from scipy.optimize import curve_fit
 np.set_printoptions(threshold=sys.maxsize)
 
 """
-Create Your Own Direct Simulation Monte Carlo (With Python)
+1:1 Time based Hard Sphere Argon Particle Collision Monte Carlo
 Author: Jeff Hatton (Science methodology by Sean Wagner)
-Based on structure by Philip Mocz (2021) Princeton Univeristy, @PMocz
-Simulate dilute gas with DSMC with 1:1 particle collisions
-Setup: Open air cube of Argon
-dimensionless units of m = sigma = k T0 = 1
+Initially inspired by a DSMC by Philip Mocz (2021) Princeton Univeristy, @PMocz
 """
-
-""" Direct Simulation Monte Carlo """
 
 # Grab Currrent Time Before Running the Code and start tracking memory usage
 # start = time.time()
