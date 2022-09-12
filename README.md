@@ -24,6 +24,7 @@ As long as you have a copy of any of the above listed simulation files, as well 
 
 ## Credits
 Author: Jeff Hatton (Science methodology by Sean Wagner)
+
 Initially inspired by DSMC by Philip Mocz (2021) Princeton Univeristy
 
 
