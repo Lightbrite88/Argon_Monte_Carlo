@@ -7,15 +7,15 @@ All sims return histogram x and y values as text files for mean free path tracki
 Only the final simulation writes a csv of the momentum change per timestep.
  - utils.py is simply a separate file for a function to keep the main simulation files a little cleaner and readable
 
-### Open_Air_Cube_DSMC.py
+### Open_Air_Cube_MC.py
 1:1 specular wall collisions in a cube to establish mean free path validity
 - this was the first stage, and had few enough particles to be run in serial
 
-### Open_Air_Pore_DSMC.py
+### Open_Air_Pore_MC.py
 1:1 specular wall collisions in a thruster pore to establish new mean free path given the thruster's shape
 - this was the second stage, and had enough particles to require parallelization for the p-p collisions
 
-### Temperature_Pore_DSMC.py
+### Temperature_Pore_MC.py
 1:1 energized wall collisions in a thruster pore with open air enclosures at endpoints to establish momentum change of thruster
 - this was the third and final stage, and had enough particles to require parallelization for the p-p collisions
 
